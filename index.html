@@ -1,7 +1,7 @@
 <!--
-20
-更新日時: 2026年9月3日 05:19
-忍者ゲーム 走行テスト20・前転方向修正＋丸まり
+21
+更新日時: 2026年9月3日 05:24
+忍者ゲーム 走行テスト21・着地即前転
 
 重要:
 ・Google Apps Script は使いません。
@@ -20,8 +20,9 @@
 ・17版の小・通常・大の高さ差は維持します。
 ・18版の小・通常・大ジャンプ判定を維持します。
 ・19版の大ジャンプ着地後の前転を維持します。
-・20版では前転の移動方向を修正し、走行方向と同じ方向へ転がるようにしました。
-・さらに前転中は体を縮める変形を加え、着地→丸まる→背中でゴロン→起き上がる印象に近づけました。
+・20版の前転方向と丸まり表現を維持します。
+・21版では大ジャンプ時だけ最後の着地フレームを表示せず、接地した瞬間から丸まり前転へ直接つなぎます。
+・前転開始時の向きも、大ジャンプ開始時の進行方向をそのまま引き継ぎます。
 ・画面上部に障害物候補値と判定回数を表示します。
 ・手動確認用の「ジャンプテスト」ボタンも維持します。
 -->
@@ -32,7 +33,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト20</title>
+<title>忍者走行テスト21</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -203,7 +204,7 @@ button.active{background:#1f8cff;color:#fff}
   let rollFacingFlipped = false;
   let rollProgress = 0;
   let rollPhase = 'idle';
-  const ROLL_DURATION_MS = 760;
+  const ROLL_DURATION_MS = 730;
   let activeJumpDurations = [95, 110, 105, 115, 135, 155];
   let activeJumpY = [0, 1.2, -4.0, -10.0, -13.5, 0];
 
@@ -246,18 +247,19 @@ button.active{background:#1f8cff;color:#fff}
       let ySink = 0;
       let angle = 0;
 
-      if (p < 0.18) {
-        const q = p / 0.18;
-        scaleX = 1.0 + 0.10 * q;
-        scaleY = 1.0 - 0.38 * q;
-        ySink = 2.4 * q;
-        angle = dir * 18 * q;
+      if (p < 0.12) {
+        const q = p / 0.12;
+        // 接地した瞬間から、すでに低く丸まり始めている。
+        scaleX = 1.10 + 0.06 * q;
+        scaleY = 0.70 - 0.12 * q;
+        ySink = 1.8 + 0.8 * q;
+        angle = dir * (8 + 16 * q);
       } else if (p < 0.76) {
-        const q = (p - 0.18) / 0.58;
+        const q = (p - 0.12) / 0.64;
         scaleX = 1.16;
         scaleY = 0.58;
         ySink = 2.6 + Math.sin(q * Math.PI) * 1.0;
-        angle = dir * (18 + q * 318);
+        angle = dir * (24 + q * 312);
       } else {
         const q = (p - 0.76) / 0.24;
         scaleX = 1.16 - 0.16 * q;
@@ -493,18 +495,26 @@ button.active{background:#1f8cff;color:#fff}
       jumpFrameIndex++;
       jumpFrameStarted = now;
 
-      if (jumpFrameIndex >= JUMP_FRAMES.length) {
-        const landedFromBigJump = (jumpMode === 'big');
+      // 21版：
+      // 大ジャンプでは最後の「着地姿勢」の1コマを表示しない。
+      // そのコマに入る瞬間に、すでに丸まり始めた前転へ直結する。
+      if (jumpMode === 'big' && jumpFrameIndex >= JUMP_FRAMES.length - 1) {
+        const rollFacing = jumpFacingFlipped;
 
         isJumping = false;
         jumpFrameIndex = 0;
         jumpYOffsetVh = 0;
         updateUI();
 
-        // 大ジャンプだけ、着地後にそのまま前転へつなぐ。
-        if (landedFromBigJump) {
-          startRoll('auto');
-        }
+        startRoll('auto', rollFacing);
+        return;
+      }
+
+      if (jumpFrameIndex >= JUMP_FRAMES.length) {
+        isJumping = false;
+        jumpFrameIndex = 0;
+        jumpYOffsetVh = 0;
+        updateUI();
         return;
       }
 
@@ -514,12 +524,12 @@ button.active{background:#1f8cff;color:#fff}
     }
   }
 
-  function startRoll(reason='manual') {
+  function startRoll(reason='manual', facingOverride=null) {
     if (isJumping || isRolling) return false;
 
     isRolling = true;
     rollStarted = performance.now();
-    rollFacingFlipped = flipped;
+    rollFacingFlipped = (facingOverride === null) ? flipped : facingOverride;
     rollProgress = 0;
     rollPhase = 'crouch';
 
