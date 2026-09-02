@@ -1,7 +1,7 @@
 <!--
-15
-更新日時: 2026年9月3日 04:52
-忍者ゲーム 走行テスト15・ジャンプ素材向き補正
+16
+更新日時: 2026年9月3日 04:59
+忍者ゲーム 走行テスト16・ジャンプ強弱
 
 重要:
 ・Google Apps Script は使いません。
@@ -15,7 +15,9 @@
 ・11版の6コマジャンプを維持します。
 ・12版の障害物候補ジャンプを維持し、13版で自動判定停止を修正しました。
 ・14版ではジャンプ開始時の向きを固定しました。
-・15版ではジャンプ6コマ素材と走行16コマ素材の基準向きが逆だったため、ジャンプ中だけ反転条件を逆にして補正しました。
+・15版のジャンプ向き補正を維持します。
+・16版では障害物候補の強さに応じて、小ジャンプ・通常ジャンプ・大ジャンプの3段階に変化させます。
+・同じ6コマ素材を使い、ジャンプの高さと滞空時間だけを変えます。
 ・画面上部に障害物候補値と判定回数を表示します。
 ・手動確認用の「ジャンプテスト」ボタンも維持します。
 -->
@@ -26,7 +28,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト15</title>
+<title>忍者走行テスト16</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -159,13 +161,31 @@ button.active{background:#1f8cff;color:#fff}
   let lastJumpAt = 0;
   let lastMotionMag = 0;
   const JUMP_COOLDOWN_MS = 2200;
-  const JUMP_DURATIONS = [95, 110, 105, 115, 135, 155];
-  const JUMP_Y_VH = [0, 1.2, -4.0, -10.0, -13.5, 0];
+  const JUMP_PRESETS = {
+    small: {
+      label: '小ジャンプ',
+      durations: [85, 95, 90, 100, 115, 130],
+      y: [0, 0.8, -3.0, -7.0, -9.5, 0]
+    },
+    normal: {
+      label: '通常ジャンプ',
+      durations: [95, 110, 105, 115, 135, 155],
+      y: [0, 1.2, -4.0, -10.0, -13.5, 0]
+    },
+    big: {
+      label: '大ジャンプ',
+      durations: [105, 125, 120, 140, 165, 175],
+      y: [0, 1.5, -5.5, -13.5, -18.0, 0]
+    }
+  };
 
   let obstacleEMA = 0;
   let obstacleHits = 0;
   let lastObstacleValue = 0;
   let jumpFacingFlipped = false;
+  let jumpMode = 'normal';
+  let activeJumpDurations = [95, 110, 105, 115, 135, 155];
+  let activeJumpY = [0, 1.2, -4.0, -10.0, -13.5, 0];
 
   FRAMES.forEach(src => { const i = new Image(); i.src = src; });
   JUMP_FRAMES.forEach(src => { const i = new Image(); i.src = src; });
@@ -357,7 +377,7 @@ button.active{background:#1f8cff;color:#fff}
     };
   }
 
-  function startJump(reason='manual') {
+  function startJump(reason='manual', strength='normal') {
     const now = performance.now();
     if (isJumping) return false;
     if (reason === 'auto' && now - lastJumpAt < JUMP_COOLDOWN_MS) return false;
@@ -365,7 +385,12 @@ button.active{background:#1f8cff;color:#fff}
     isJumping = true;
     jumpFrameIndex = 0;
     jumpFrameStarted = now;
-    jumpYOffsetVh = JUMP_Y_VH[0];
+
+    jumpMode = JUMP_PRESETS[strength] ? strength : 'normal';
+    activeJumpDurations = JUMP_PRESETS[jumpMode].durations;
+    activeJumpY = JUMP_PRESETS[jumpMode].y;
+    jumpYOffsetVh = activeJumpY[0];
+
     lastJumpAt = now;
 
     // ジャンプ開始時点の向きを固定する。
@@ -376,7 +401,7 @@ button.active{background:#1f8cff;color:#fff}
     updateUI();
 
     status.innerHTML =
-      'アクション：<span class="badge">ジャンプ</span>' +
+      'アクション：<span class="badge">' + JUMP_PRESETS[jumpMode].label + '</span>' +
       (reason === 'auto' ? '　障害物候補を検出' : '　手動テスト');
     return true;
   }
@@ -384,7 +409,7 @@ button.active{background:#1f8cff;color:#fff}
   function updateJump(now) {
     if (!isJumping) return;
 
-    if (now - jumpFrameStarted >= JUMP_DURATIONS[jumpFrameIndex]) {
+    if (now - jumpFrameStarted >= activeJumpDurations[jumpFrameIndex]) {
       jumpFrameIndex++;
       jumpFrameStarted = now;
 
@@ -396,7 +421,7 @@ button.active{background:#1f8cff;color:#fff}
         return;
       }
 
-      jumpYOffsetVh = JUMP_Y_VH[jumpFrameIndex];
+      jumpYOffsetVh = activeJumpY[jumpFrameIndex];
       ninja.src = JUMP_FRAMES[jumpFrameIndex];
       updateUI();
     }
@@ -459,7 +484,16 @@ button.active{background:#1f8cff;color:#fff}
     else obstacleHits = Math.max(0, obstacleHits - 1);
 
     if (autoMode && !isJumping && obstacleHits >= 2) {
-      startJump('auto');
+      let strength = 'normal';
+
+      // 候補値と近景の流れ量の両方でジャンプの強さを決める。
+      if (obstacleEMA > obstacleThreshold * 1.75 || mag > 3.3) {
+        strength = 'big';
+      } else if (obstacleEMA < obstacleThreshold * 1.22 && mag < 1.55) {
+        strength = 'small';
+      }
+
+      startJump('auto', strength);
       obstacleHits = 0;
     }
 
@@ -530,7 +564,10 @@ button.active{background:#1f8cff;color:#fff}
   });
 
   jumpTestBtn.addEventListener('click', () => {
-    startJump('manual');
+    const next = jumpMode === 'small' ? 'normal'
+               : jumpMode === 'normal' ? 'big'
+               : 'small';
+    startJump('manual', next);
   });
 
   startCam.addEventListener('click', startCamera);
