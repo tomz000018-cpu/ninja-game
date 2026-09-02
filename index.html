@@ -1,7 +1,7 @@
 <!--
-18
-更新日時: 2026年9月3日 05:08
-忍者ゲーム 走行テスト18・ジャンプ種類判定修正
+19
+更新日時: 2026年9月3日 05:13
+忍者ゲーム 走行テスト19・着地前転
 
 重要:
 ・Google Apps Script は使いません。
@@ -18,9 +18,10 @@
 ・15版のジャンプ向き補正を維持します。
 ・16版の3段階ジャンプを維持します。
 ・17版の小・通常・大の高さ差は維持します。
-・18版では大ジャンプに偏りすぎる自動判定を修正し、小ジャンプ・通常ジャンプが出やすいように判定帯を広げました。
-・さらに連続して大ジャンプになり続けないよう抑制を追加しました。
-・手動確認は小・通常・大を別ボタンにして、3種類を確実に比較できます。
+・18版の小・通常・大ジャンプ判定を維持します。
+・19版では大ジャンプの着地後に前転アクションを追加しました。
+・前転中はジャンプ開始時と同じ向きを保ち、進行方向へ少し転がってから通常走行へ戻ります。
+・前転テストボタンも追加しました。
 ・画面上部に障害物候補値と判定回数を表示します。
 ・手動確認用の「ジャンプテスト」ボタンも維持します。
 -->
@@ -31,7 +32,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト18</title>
+<title>忍者走行テスト19</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -49,7 +50,7 @@ padding:10px;border-radius:14px;background:rgba(0,0,0,.66);backdrop-filter:blur(
 .row{display:grid;grid-template-columns:90px 1fr 58px;gap:8px;align-items:center;margin:6px 0;font-size:13px}
 input[type=range]{width:100%}
 .buttons{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:8px}
-.jumpButtons{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:7px}
+.jumpButtons{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:7px;margin-top:7px}
 button{appearance:none;border:0;border-radius:10px;padding:10px 6px;font-size:14px;font-weight:700;background:#fff;color:#111}
 button.secondary{background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.25)}
 button.active{background:#1f8cff;color:#fff}
@@ -93,6 +94,7 @@ button.active{background:#1f8cff;color:#fff}
       <button id="jumpSmall" class="secondary">小ジャンプ</button>
       <button id="jumpNormal" class="secondary">通常</button>
       <button id="jumpBig" class="secondary">大ジャンプ</button>
+      <button id="rollTest" class="secondary">前転</button>
     </div>
   </div>
 </div>
@@ -149,6 +151,7 @@ button.active{background:#1f8cff;color:#fff}
   const jumpSmallBtn = document.getElementById('jumpSmall');
   const jumpNormalBtn = document.getElementById('jumpNormal');
   const jumpBigBtn = document.getElementById('jumpBig');
+  const rollTestBtn = document.getElementById('rollTest');
 
   let frameIndex = 0;
   let animTimer = null;
@@ -195,6 +198,11 @@ button.active{background:#1f8cff;color:#fff}
   let jumpFacingFlipped = false;
   let jumpMode = 'normal';
   let lastAutoJumpMode = '';
+  let isRolling = false;
+  let rollStarted = 0;
+  let rollFacingFlipped = false;
+  let rollProgress = 0;
+  const ROLL_DURATION_MS = 620;
   let activeJumpDurations = [95, 110, 105, 115, 135, 155];
   let activeJumpY = [0, 1.2, -4.0, -10.0, -13.5, 0];
 
@@ -216,8 +224,28 @@ button.active{background:#1f8cff;color:#fff}
     ninja.style.top = heightPos.value + '%';
     // ジャンプ6コマ素材は走行16コマ素材と基準向きが逆なので、
     // ジャンプ中だけ反転条件を逆にして見た目の進行方向を揃える。
-    const visualFlip = isJumping ? !jumpFacingFlipped : flipped;
-    ninja.style.transform = 'translate(-50%,-50%) translateY(' + jumpYOffsetVh + 'vh)' + (visualFlip ? ' scaleX(-1)' : '');
+    let visualFlip = isJumping ? !jumpFacingFlipped : flipped;
+    let extraTransform = '';
+
+    if (isRolling) {
+      visualFlip = rollFacingFlipped;
+
+      // 進行方向へ少し移動しながら1回転。
+      const dir = rollFacingFlipped ? -1 : 1;
+      const xMove = dir * rollProgress * 11;
+      const angle = dir * rollProgress * 360;
+      const hop = Math.sin(rollProgress * Math.PI) * -1.2;
+
+      extraTransform =
+        ' translateX(' + xMove + 'vw)' +
+        ' translateY(' + hop + 'vh)' +
+        ' rotate(' + angle + 'deg)';
+    }
+
+    ninja.style.transform =
+      'translate(-50%,-50%) translateY(' + jumpYOffsetVh + 'vh)' +
+      extraTransform +
+      (visualFlip ? ' scaleX(-1)' : '');
     speedVal.textContent = speed.value + 'ms';
     sizeVal.textContent = size.value + '%';
     heightVal.textContent = heightPos.value + '%';
@@ -261,6 +289,8 @@ button.active{background:#1f8cff;color:#fff}
       obstacleHits = 0;
       lastObstacleValue = 0;
       lastAutoJumpMode = '';
+      isRolling = false;
+      rollProgress = 0;
       status.textContent = 'カメラ表示中。単独HTMLとして動作中。景色の横方向の流れを検出しています。';
       startCam.textContent = 'カメラ再開';
       requestAnimationFrame(analyzeLoop);
@@ -391,7 +421,7 @@ button.active{background:#1f8cff;color:#fff}
 
   function startJump(reason='manual', strength='normal') {
     const now = performance.now();
-    if (isJumping) return false;
+    if (isJumping || isRolling) return false;
     if (reason === 'auto' && now - lastJumpAt < JUMP_COOLDOWN_MS) return false;
 
     isJumping = true;
@@ -426,10 +456,17 @@ button.active{background:#1f8cff;color:#fff}
       jumpFrameStarted = now;
 
       if (jumpFrameIndex >= JUMP_FRAMES.length) {
+        const landedFromBigJump = (jumpMode === 'big');
+
         isJumping = false;
         jumpFrameIndex = 0;
         jumpYOffsetVh = 0;
         updateUI();
+
+        // 大ジャンプだけ、着地後にそのまま前転へつなぐ。
+        if (landedFromBigJump) {
+          startRoll('auto');
+        }
         return;
       }
 
@@ -437,6 +474,41 @@ button.active{background:#1f8cff;color:#fff}
       ninja.src = JUMP_FRAMES[jumpFrameIndex];
       updateUI();
     }
+  }
+
+  function startRoll(reason='manual') {
+    if (isJumping || isRolling) return false;
+
+    isRolling = true;
+    rollStarted = performance.now();
+    rollFacingFlipped = flipped;
+    rollProgress = 0;
+
+    // 前転では走行素材の1コマを使い、全体を回転させて簡易的に表現する。
+    ninja.src = FRAMES[3];
+
+    status.innerHTML =
+      'アクション：<span class="badge">前転</span>' +
+      (reason === 'auto' ? '　大ジャンプ着地' : '　手動テスト');
+
+    updateUI();
+    return true;
+  }
+
+  function updateRoll(now) {
+    if (!isRolling) return;
+
+    rollProgress = Math.min(1, (now - rollStarted) / ROLL_DURATION_MS);
+
+    if (rollProgress >= 1) {
+      isRolling = false;
+      rollProgress = 0;
+      ninja.style.opacity = '1';
+      updateUI();
+      return;
+    }
+
+    updateUI();
   }
 
   function estimateObstacleCandidate(prev, curr, dirSign) {
@@ -495,7 +567,7 @@ button.active{background:#1f8cff;color:#fff}
     if (candidate) obstacleHits++;
     else obstacleHits = Math.max(0, obstacleHits - 1);
 
-    if (autoMode && !isJumping && obstacleHits >= 2) {
+    if (autoMode && !isJumping && !isRolling && obstacleHits >= 2) {
       let strength = 'normal';
 
       // 18版:
@@ -603,6 +675,10 @@ button.active{background:#1f8cff;color:#fff}
     startJump('manual', 'big');
   });
 
+  rollTestBtn.addEventListener('click', () => {
+    startRoll('manual');
+  });
+
   startCam.addEventListener('click', startCamera);
 
   // Re-read current speed every frame, so auto speed changes take effect without restarting timer.
@@ -612,6 +688,12 @@ button.active{background:#1f8cff;color:#fff}
     if (isJumping) {
       updateJump(now);
       // ジャンプ中は6コマ側が画像を管理する。
+      setTimeout(animationLoop, 24);
+      return;
+    }
+
+    if (isRolling) {
+      updateRoll(now);
       setTimeout(animationLoop, 24);
       return;
     }
