@@ -1,7 +1,7 @@
 <!--
-16
-更新日時: 2026年9月3日 04:59
-忍者ゲーム 走行テスト16・ジャンプ強弱
+17
+更新日時: 2026年9月3日 05:03
+忍者ゲーム 走行テスト17・ジャンプ強弱拡大
 
 重要:
 ・Google Apps Script は使いません。
@@ -16,8 +16,9 @@
 ・12版の障害物候補ジャンプを維持し、13版で自動判定停止を修正しました。
 ・14版ではジャンプ開始時の向きを固定しました。
 ・15版のジャンプ向き補正を維持します。
-・16版では障害物候補の強さに応じて、小ジャンプ・通常ジャンプ・大ジャンプの3段階に変化させます。
-・同じ6コマ素材を使い、ジャンプの高さと滞空時間だけを変えます。
+・16版の3段階ジャンプを維持します。
+・17版では小・通常・大の差を大幅に拡大し、見た目ではっきり区別できるようにしました。
+・小ジャンプは低く短く、大ジャンプは忍者1体分以上はっきり上へ跳び、滞空時間も長くします。
 ・画面上部に障害物候補値と判定回数を表示します。
 ・手動確認用の「ジャンプテスト」ボタンも維持します。
 -->
@@ -28,7 +29,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト16</title>
+<title>忍者走行テスト17</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -164,8 +165,8 @@ button.active{background:#1f8cff;color:#fff}
   const JUMP_PRESETS = {
     small: {
       label: '小ジャンプ',
-      durations: [85, 95, 90, 100, 115, 130],
-      y: [0, 0.8, -3.0, -7.0, -9.5, 0]
+      durations: [65, 72, 72, 78, 82, 95],
+      y: [0, 0.4, -1.8, -3.8, -5.0, 0]
     },
     normal: {
       label: '通常ジャンプ',
@@ -174,8 +175,8 @@ button.active{background:#1f8cff;color:#fff}
     },
     big: {
       label: '大ジャンプ',
-      durations: [105, 125, 120, 140, 165, 175],
-      y: [0, 1.5, -5.5, -13.5, -18.0, 0]
+      durations: [130, 155, 170, 210, 260, 210],
+      y: [0, 2.0, -9.0, -24.0, -34.0, 0]
     }
   };
 
@@ -487,9 +488,9 @@ button.active{background:#1f8cff;color:#fff}
       let strength = 'normal';
 
       // 候補値と近景の流れ量の両方でジャンプの強さを決める。
-      if (obstacleEMA > obstacleThreshold * 1.75 || mag > 3.3) {
+      if (obstacleEMA > obstacleThreshold * 1.45 || mag > 2.7) {
         strength = 'big';
-      } else if (obstacleEMA < obstacleThreshold * 1.22 && mag < 1.55) {
+      } else if (obstacleEMA < obstacleThreshold * 1.12 && mag < 1.35) {
         strength = 'small';
       }
 
