@@ -1,7 +1,7 @@
 <!--
-17
-更新日時: 2026年9月3日 05:03
-忍者ゲーム 走行テスト17・ジャンプ強弱拡大
+18
+更新日時: 2026年9月3日 05:08
+忍者ゲーム 走行テスト18・ジャンプ種類判定修正
 
 重要:
 ・Google Apps Script は使いません。
@@ -17,8 +17,10 @@
 ・14版ではジャンプ開始時の向きを固定しました。
 ・15版のジャンプ向き補正を維持します。
 ・16版の3段階ジャンプを維持します。
-・17版では小・通常・大の差を大幅に拡大し、見た目ではっきり区別できるようにしました。
-・小ジャンプは低く短く、大ジャンプは忍者1体分以上はっきり上へ跳び、滞空時間も長くします。
+・17版の小・通常・大の高さ差は維持します。
+・18版では大ジャンプに偏りすぎる自動判定を修正し、小ジャンプ・通常ジャンプが出やすいように判定帯を広げました。
+・さらに連続して大ジャンプになり続けないよう抑制を追加しました。
+・手動確認は小・通常・大を別ボタンにして、3種類を確実に比較できます。
 ・画面上部に障害物候補値と判定回数を表示します。
 ・手動確認用の「ジャンプテスト」ボタンも維持します。
 -->
@@ -29,7 +31,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト17</title>
+<title>忍者走行テスト18</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -46,7 +48,8 @@ backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 padding:10px;border-radius:14px;background:rgba(0,0,0,.66);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .row{display:grid;grid-template-columns:90px 1fr 58px;gap:8px;align-items:center;margin:6px 0;font-size:13px}
 input[type=range]{width:100%}
-.buttons{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:7px;margin-top:8px}
+.buttons{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:8px}
+.jumpButtons{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:7px}
 button{appearance:none;border:0;border-radius:10px;padding:10px 6px;font-size:14px;font-weight:700;background:#fff;color:#111}
 button.secondary{background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.25)}
 button.active{background:#1f8cff;color:#fff}
@@ -85,7 +88,11 @@ button.active{background:#1f8cff;color:#fff}
       <button id="startCam">カメラ開始</button>
       <button id="autoBtn" class="active">自動 ON</button>
       <button id="flip" class="secondary">手動反転</button>
-      <button id="jumpTest" class="secondary">ジャンプテスト</button>
+    </div>
+    <div class="jumpButtons">
+      <button id="jumpSmall" class="secondary">小ジャンプ</button>
+      <button id="jumpNormal" class="secondary">通常</button>
+      <button id="jumpBig" class="secondary">大ジャンプ</button>
     </div>
   </div>
 </div>
@@ -139,7 +146,9 @@ button.active{background:#1f8cff;color:#fff}
   const startCam = document.getElementById('startCam');
   const autoBtn = document.getElementById('autoBtn');
   const flipBtn = document.getElementById('flip');
-  const jumpTestBtn = document.getElementById('jumpTest');
+  const jumpSmallBtn = document.getElementById('jumpSmall');
+  const jumpNormalBtn = document.getElementById('jumpNormal');
+  const jumpBigBtn = document.getElementById('jumpBig');
 
   let frameIndex = 0;
   let animTimer = null;
@@ -185,6 +194,7 @@ button.active{background:#1f8cff;color:#fff}
   let lastObstacleValue = 0;
   let jumpFacingFlipped = false;
   let jumpMode = 'normal';
+  let lastAutoJumpMode = '';
   let activeJumpDurations = [95, 110, 105, 115, 135, 155];
   let activeJumpY = [0, 1.2, -4.0, -10.0, -13.5, 0];
 
@@ -250,6 +260,7 @@ button.active{background:#1f8cff;color:#fff}
       obstacleEMA = 0;
       obstacleHits = 0;
       lastObstacleValue = 0;
+      lastAutoJumpMode = '';
       status.textContent = 'カメラ表示中。単独HTMLとして動作中。景色の横方向の流れを検出しています。';
       startCam.textContent = 'カメラ再開';
       requestAnimationFrame(analyzeLoop);
@@ -487,14 +498,27 @@ button.active{background:#1f8cff;color:#fff}
     if (autoMode && !isJumping && obstacleHits >= 2) {
       let strength = 'normal';
 
-      // 候補値と近景の流れ量の両方でジャンプの強さを決める。
-      if (obstacleEMA > obstacleThreshold * 1.45 || mag > 2.7) {
-        strength = 'big';
-      } else if (obstacleEMA < obstacleThreshold * 1.12 && mag < 1.35) {
+      // 18版:
+      // 障害物候補値が「しきい値をどれだけ超えたか」で3段階に分ける。
+      // 17版は大ジャンプ条件が緩すぎて、ほぼ大ジャンプに偏っていた。
+      const jumpRatio = obstacleEMA / Math.max(0.01, obstacleThreshold);
+
+      if (jumpRatio < 1.95) {
         strength = 'small';
+      } else if (jumpRatio < 3.20) {
+        strength = 'normal';
+      } else {
+        strength = 'big';
+      }
+
+      // 大ジャンプばかり連続するのを防ぐ。
+      // 本当に極端に強い候補（4.5倍超）の時だけ連続大ジャンプを許す。
+      if (strength === 'big' && lastAutoJumpMode === 'big' && jumpRatio < 4.50) {
+        strength = 'normal';
       }
 
       startJump('auto', strength);
+      lastAutoJumpMode = strength;
       obstacleHits = 0;
     }
 
@@ -516,7 +540,10 @@ button.active{background:#1f8cff;color:#fff}
       '　流れ量 ' + flow.toFixed(2) +
       '　近景優先' +
       '　障害物候補 ' + lastObstacleValue.toFixed(2) +
-      '　判定 ' + obstacleHits + '/2';
+      '　判定 ' + obstacleHits + '/2' +
+      '　次候補 ' +
+      ((lastObstacleValue / Math.max(0.01, obstacleThreshold)) < 1.95 ? '小' :
+       (lastObstacleValue / Math.max(0.01, obstacleThreshold)) < 3.20 ? '通常' : '大');
 
     updateUI();
   }
@@ -564,11 +591,16 @@ button.active{background:#1f8cff;color:#fff}
     status.textContent = '手動反転しました。自動検出はOFFです。';
   });
 
-  jumpTestBtn.addEventListener('click', () => {
-    const next = jumpMode === 'small' ? 'normal'
-               : jumpMode === 'normal' ? 'big'
-               : 'small';
-    startJump('manual', next);
+  jumpSmallBtn.addEventListener('click', () => {
+    startJump('manual', 'small');
+  });
+
+  jumpNormalBtn.addEventListener('click', () => {
+    startJump('manual', 'normal');
+  });
+
+  jumpBigBtn.addEventListener('click', () => {
+    startJump('manual', 'big');
   });
 
   startCam.addEventListener('click', startCamera);
