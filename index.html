@@ -1,7 +1,7 @@
 <!--
-12
-更新日時: 2026年9月3日 04:43
-忍者ゲーム 走行テスト12・障害物候補ジャンプ
+13
+更新日時: 2026年9月3日 04:46
+忍者ゲーム 走行テスト13・自動判定修正
 
 重要:
 ・Google Apps Script は使いません。
@@ -13,7 +13,7 @@
 ・横方向の景色の流れを簡易検出して、忍者の向きとコマ送り速度を自動調整します。
 ・10版の近景優先検出を維持します。
 ・11版の6コマジャンプを維持します。
-・12版では画面下側の進行方向寄りを重点監視し、障害物候補が続いた時に自動ジャンプします。
+・12版の障害物候補ジャンプを維持し、13版で自動判定停止の不具合を修正しました。
 ・画面上部に障害物候補値と判定回数を表示します。
 ・手動確認用の「ジャンプテスト」ボタンも維持します。
 -->
@@ -24,7 +24,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト12</title>
+<title>忍者走行テスト13</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -414,7 +414,7 @@ button.active{background:#1f8cff;color:#fff}
     return diff * 0.055 + edge * 0.018;
   }
 
-  function applyAuto(flow, confidence) {
+  function applyAuto(flow, confidence, prevFrame, currFrame) {
     if (!autoMode) return;
 
     const sens = Number(sensitivity.value);
@@ -433,16 +433,16 @@ button.active{background:#1f8cff;color:#fff}
 
     // 12版: 進行方向の画面下側に出た「障害物候補」を2回続けて検出した時にジャンプ。
     let obstacleValue = 0;
-    if (prevGray && gray) {
-      obstacleValue = estimateObstacleCandidate(prevGray, gray, lastDirection);
+    if (prevFrame && currFrame) {
+      obstacleValue = estimateObstacleCandidate(prevFrame, currFrame, lastDirection);
     }
     obstacleEMA = obstacleEMA * 0.68 + obstacleValue * 0.32;
 
-    const obstacleThreshold = 1.05 + (Number(sensitivity.value) - 5) * -0.07;
-    const strongNearMotion = mag > 0.75;
+    const obstacleThreshold = 0.82 + (Number(sensitivity.value) - 5) * -0.06;
+    const strongNearMotion = mag > 0.55;
     const candidate = obstacleEMA > obstacleThreshold &&
                       strongNearMotion &&
-                      confidence > 0.010;
+                      confidence > 0.006;
 
     if (candidate) obstacleHits++;
     else obstacleHits = Math.max(0, obstacleHits - 1);
@@ -488,7 +488,7 @@ button.active{background:#1f8cff;color:#fff}
         const r = estimateNearHorizontalShift(prevGray, gray);
         flowEMA = flowEMA*0.68 + r.shift*0.32;
         confidenceEMA = confidenceEMA*0.7 + r.confidence*0.3;
-        applyAuto(flowEMA, confidenceEMA);
+        applyAuto(flowEMA, confidenceEMA, prevGray, gray);
       }
       prevGray = gray;
     }
