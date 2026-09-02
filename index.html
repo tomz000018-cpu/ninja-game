@@ -1,7 +1,7 @@
 <!--
-13
-更新日時: 2026年9月3日 04:46
-忍者ゲーム 走行テスト13・自動判定修正
+15
+更新日時: 2026年9月3日 04:52
+忍者ゲーム 走行テスト15・ジャンプ素材向き補正
 
 重要:
 ・Google Apps Script は使いません。
@@ -13,7 +13,9 @@
 ・横方向の景色の流れを簡易検出して、忍者の向きとコマ送り速度を自動調整します。
 ・10版の近景優先検出を維持します。
 ・11版の6コマジャンプを維持します。
-・12版の障害物候補ジャンプを維持し、13版で自動判定停止の不具合を修正しました。
+・12版の障害物候補ジャンプを維持し、13版で自動判定停止を修正しました。
+・14版ではジャンプ開始時の向きを固定しました。
+・15版ではジャンプ6コマ素材と走行16コマ素材の基準向きが逆だったため、ジャンプ中だけ反転条件を逆にして補正しました。
 ・画面上部に障害物候補値と判定回数を表示します。
 ・手動確認用の「ジャンプテスト」ボタンも維持します。
 -->
@@ -24,7 +26,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト13</title>
+<title>忍者走行テスト15</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -163,6 +165,7 @@ button.active{background:#1f8cff;color:#fff}
   let obstacleEMA = 0;
   let obstacleHits = 0;
   let lastObstacleValue = 0;
+  let jumpFacingFlipped = false;
 
   FRAMES.forEach(src => { const i = new Image(); i.src = src; });
   JUMP_FRAMES.forEach(src => { const i = new Image(); i.src = src; });
@@ -180,7 +183,10 @@ button.active{background:#1f8cff;color:#fff}
   function updateUI() {
     ninja.style.width = size.value + 'vw';
     ninja.style.top = heightPos.value + '%';
-    ninja.style.transform = 'translate(-50%,-50%) translateY(' + jumpYOffsetVh + 'vh)' + (flipped ? ' scaleX(-1)' : '');
+    // ジャンプ6コマ素材は走行16コマ素材と基準向きが逆なので、
+    // ジャンプ中だけ反転条件を逆にして見た目の進行方向を揃える。
+    const visualFlip = isJumping ? !jumpFacingFlipped : flipped;
+    ninja.style.transform = 'translate(-50%,-50%) translateY(' + jumpYOffsetVh + 'vh)' + (visualFlip ? ' scaleX(-1)' : '');
     speedVal.textContent = speed.value + 'ms';
     sizeVal.textContent = size.value + '%';
     heightVal.textContent = heightPos.value + '%';
@@ -361,6 +367,11 @@ button.active{background:#1f8cff;color:#fff}
     jumpFrameStarted = now;
     jumpYOffsetVh = JUMP_Y_VH[0];
     lastJumpAt = now;
+
+    // ジャンプ開始時点の向きを固定する。
+    // ジャンプ中に背景判定が一瞬反転しても、ジャンプ画像の向きは変えない。
+    jumpFacingFlipped = flipped;
+
     ninja.src = JUMP_FRAMES[0];
     updateUI();
 
