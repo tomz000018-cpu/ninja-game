@@ -1,7 +1,7 @@
 <!--
-11
-更新日時: 2026年9月3日 04:36
-忍者ゲーム 走行テスト11・ジャンプ導入
+12
+更新日時: 2026年9月3日 04:43
+忍者ゲーム 走行テスト12・障害物候補ジャンプ
 
 重要:
 ・Google Apps Script は使いません。
@@ -12,8 +12,10 @@
 ・カメラ失敗時はエラー名と環境情報を画面上に表示します。
 ・横方向の景色の流れを簡易検出して、忍者の向きとコマ送り速度を自動調整します。
 ・10版の近景優先検出を維持します。
-・11版では6コマのジャンプ動作を追加し、近景の急な変化で自動ジャンプします。
-・手動確認用の「ジャンプテスト」ボタンも追加します。
+・11版の6コマジャンプを維持します。
+・12版では画面下側の進行方向寄りを重点監視し、障害物候補が続いた時に自動ジャンプします。
+・画面上部に障害物候補値と判定回数を表示します。
+・手動確認用の「ジャンプテスト」ボタンも維持します。
 -->
 <!doctype html>
 <html lang="ja">
@@ -22,7 +24,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト11</title>
+<title>忍者走行テスト12</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -158,6 +160,10 @@ button.active{background:#1f8cff;color:#fff}
   const JUMP_DURATIONS = [95, 110, 105, 115, 135, 155];
   const JUMP_Y_VH = [0, 1.2, -4.0, -10.0, -13.5, 0];
 
+  let obstacleEMA = 0;
+  let obstacleHits = 0;
+  let lastObstacleValue = 0;
+
   FRAMES.forEach(src => { const i = new Image(); i.src = src; });
   JUMP_FRAMES.forEach(src => { const i = new Image(); i.src = src; });
 
@@ -214,6 +220,9 @@ button.active{background:#1f8cff;color:#fff}
       flowEMA = 0;
       confidenceEMA = 0;
       lastMotionMag = 0;
+      obstacleEMA = 0;
+      obstacleHits = 0;
+      lastObstacleValue = 0;
       status.textContent = 'カメラ表示中。単独HTMLとして動作中。景色の横方向の流れを検出しています。';
       startCam.textContent = 'カメラ再開';
       requestAnimationFrame(analyzeLoop);
@@ -357,7 +366,7 @@ button.active{background:#1f8cff;color:#fff}
 
     status.innerHTML =
       'アクション：<span class="badge">ジャンプ</span>' +
-      (reason === 'auto' ? '　近景の急変を検出' : '　手動テスト');
+      (reason === 'auto' ? '　障害物候補を検出' : '　手動テスト');
     return true;
   }
 
@@ -382,6 +391,29 @@ button.active{background:#1f8cff;color:#fff}
     }
   }
 
+  function estimateObstacleCandidate(prev, curr, dirSign) {
+    const w = canvas.width, h = canvas.height;
+    const y0 = Math.floor(h * 0.55);
+    const y1 = h - 2;
+    const x0 = dirSign > 0 ? Math.floor(w * 0.52) : 2;
+    const x1 = dirSign > 0 ? w - 2 : Math.floor(w * 0.48);
+
+    let diffSum = 0, edgeSum = 0, count = 0;
+    for (let y=y0; y<y1; y+=2) {
+      const row = y*w;
+      for (let x=x0; x<x1; x+=2) {
+        const idx = row + x;
+        diffSum += Math.abs(curr[idx] - prev[idx]);
+        if (x+2 < w) edgeSum += Math.abs(curr[idx] - curr[idx+2]);
+        count++;
+      }
+    }
+    if (!count) return 0;
+    const diff = diffSum / count;
+    const edge = edgeSum / count;
+    return diff * 0.055 + edge * 0.018;
+  }
+
   function applyAuto(flow, confidence) {
     if (!autoMode) return;
 
@@ -399,15 +431,28 @@ button.active{background:#1f8cff;color:#fff}
     // Map motion magnitude to animation speed.
     const mag = Math.min(6, Math.abs(flow));
 
-    // 近景の流れ量が急に増えたときだけジャンプ候補にする。
-    // 単なる一定スクロールでは連続ジャンプしないよう、増分＋クールダウンで判定。
-    const motionSurge = mag - lastMotionMag;
-    if (autoMode && !isJumping &&
-        mag > 1.15 &&
-        motionSurge > 0.48 &&
-        confidence > 0.018) {
-      startJump('auto');
+    // 12版: 進行方向の画面下側に出た「障害物候補」を2回続けて検出した時にジャンプ。
+    let obstacleValue = 0;
+    if (prevGray && gray) {
+      obstacleValue = estimateObstacleCandidate(prevGray, gray, lastDirection);
     }
+    obstacleEMA = obstacleEMA * 0.68 + obstacleValue * 0.32;
+
+    const obstacleThreshold = 1.05 + (Number(sensitivity.value) - 5) * -0.07;
+    const strongNearMotion = mag > 0.75;
+    const candidate = obstacleEMA > obstacleThreshold &&
+                      strongNearMotion &&
+                      confidence > 0.010;
+
+    if (candidate) obstacleHits++;
+    else obstacleHits = Math.max(0, obstacleHits - 1);
+
+    if (autoMode && !isJumping && obstacleHits >= 2) {
+      startJump('auto');
+      obstacleHits = 0;
+    }
+
+    lastObstacleValue = obstacleEMA;
     lastMotionMag = lastMotionMag * 0.55 + mag * 0.45;
 
     const newMs = Math.round(135 - mag * 13);
@@ -422,7 +467,10 @@ button.active{background:#1f8cff;color:#fff}
     status.innerHTML =
       '自動検出：<span class="badge">' + dirText + '</span>' +
       '<span class="badge">' + motionText + '</span>' +
-      '　流れ量 ' + flow.toFixed(2) + '　近景優先';
+      '　流れ量 ' + flow.toFixed(2) +
+      '　近景優先' +
+      '　障害物候補 ' + lastObstacleValue.toFixed(2) +
+      '　判定 ' + obstacleHits + '/2';
 
     updateUI();
   }
