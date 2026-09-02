@@ -1,7 +1,7 @@
 <!--
-09
-更新日時: 2026年9月3日 02:18
-忍者ゲーム 走行テスト09・向き反転修正
+10
+更新日時: 2026年9月3日 02:46
+忍者ゲーム 走行テスト10・近景優先検出
 
 重要:
 ・Google Apps Script は使いません。
@@ -11,6 +11,7 @@
 ・画像生成・ポーズ変更はしていません。
 ・カメラ失敗時はエラー名と環境情報を画面上に表示します。
 ・横方向の景色の流れを簡易検出して、忍者の向きとコマ送り速度を自動調整します。
+・10版では画面を6ブロックに分け、動きの大きい近景候補を優先して判定します。
 -->
 <!doctype html>
 <html lang="ja">
@@ -19,7 +20,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト09</title>
+<title>忍者走行テスト10</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -218,20 +219,19 @@ button.active{background:#1f8cff;color:#fff}
     return g;
   }
 
-  function estimateHorizontalShift(prev, curr) {
-    const w = canvas.width, h = canvas.height;
+  function estimateShiftRegion(prev, curr, rx0, rx1, ry0, ry1) {
+    const w = canvas.width;
     const maxShift = 6;
     let bestShift = 0;
     let bestScore = Infinity;
     let secondScore = Infinity;
 
-    // Compare central area only; helps ignore UI edges / black borders.
-    const y0 = 5, y1 = h-5;
     for (let s=-maxShift; s<=maxShift; s++) {
       let sum = 0, count = 0;
-      const x0 = 7 + Math.max(0,-s);
-      const x1 = w-7-Math.max(0,s);
-      for (let y=y0; y<y1; y+=2) {
+      const x0 = Math.max(rx0, rx0 - s);
+      const x1 = Math.min(rx1, rx1 - s);
+
+      for (let y=ry0; y<ry1; y+=2) {
         const row = y*w;
         for (let x=x0; x<x1; x+=2) {
           const a = prev[row+x];
@@ -240,6 +240,7 @@ button.active{background:#1f8cff;color:#fff}
           count++;
         }
       }
+
       const score = sum / Math.max(1,count);
       if (score < bestScore) {
         secondScore = bestScore;
@@ -250,8 +251,68 @@ button.active{background:#1f8cff;color:#fff}
       }
     }
 
-    const separation = Math.max(0, secondScore - bestScore);
-    return {shift:bestShift, confidence:separation};
+    return {
+      shift: bestShift,
+      confidence: Math.max(0, secondScore - bestScore)
+    };
+  }
+
+  function estimateNearHorizontalShift(prev, curr) {
+    const w = canvas.width, h = canvas.height;
+
+    // 画面を3列×2段の6ブロックに分ける。
+    // 遠景より大きく動くブロックを「近景候補」として優先する。
+    const marginX = 4, marginY = 4;
+    const innerW = w - marginX*2;
+    const innerH = h - marginY*2;
+    const blockW = Math.floor(innerW / 3);
+    const blockH = Math.floor(innerH / 2);
+    const results = [];
+
+    for (let by=0; by<2; by++) {
+      for (let bx=0; bx<3; bx++) {
+        const x0 = marginX + bx*blockW;
+        const x1 = (bx === 2) ? w-marginX : x0+blockW;
+        const y0 = marginY + by*blockH;
+        const y1 = (by === 1) ? h-marginY : y0+blockH;
+        const r = estimateShiftRegion(prev, curr, x0, x1, y0, y1);
+
+        // 動き量を強めに評価。confidenceは誤判定抑制用。
+        const nearScore = Math.abs(r.shift) * (0.45 + Math.min(2.0, r.confidence));
+        results.push({...r, nearScore});
+      }
+    }
+
+    // 大きく動いている近景候補から上位3ブロックを見る。
+    results.sort((a,b) => b.nearScore - a.nearScore);
+    const top = results.slice(0,3);
+
+    // 上位候補の多数派方向を決める。
+    let vote = 0;
+    for (const r of top) {
+      vote += Math.sign(r.shift) * Math.max(0.25, r.nearScore);
+    }
+    const dominantSign = vote === 0 ? Math.sign(top[0]?.shift || 0) : Math.sign(vote);
+
+    // 多数派方向だけで重み付き平均。
+    let weighted = 0, weightSum = 0, confSum = 0;
+    for (const r of top) {
+      if (r.shift === 0 || Math.sign(r.shift) === dominantSign) {
+        const weight = Math.max(0.25, r.nearScore);
+        weighted += r.shift * weight;
+        weightSum += weight;
+        confSum += r.confidence;
+      }
+    }
+
+    if (weightSum <= 0) {
+      return {shift:0, confidence:0};
+    }
+
+    return {
+      shift: weighted / weightSum,
+      confidence: confSum / Math.max(1, top.length)
+    };
   }
 
   function applyAuto(flow, confidence) {
@@ -282,7 +343,7 @@ button.active{background:#1f8cff;color:#fff}
     status.innerHTML =
       '自動検出：<span class="badge">' + dirText + '</span>' +
       '<span class="badge">' + motionText + '</span>' +
-      '　流れ量 ' + flow.toFixed(2);
+      '　流れ量 ' + flow.toFixed(2) + '　近景優先';
 
     updateUI();
   }
@@ -297,7 +358,7 @@ button.active{background:#1f8cff;color:#fff}
       lastAnalyze = ts;
       const gray = getGrayFrame();
       if (prevGray) {
-        const r = estimateHorizontalShift(prevGray, gray);
+        const r = estimateNearHorizontalShift(prevGray, gray);
         flowEMA = flowEMA*0.68 + r.shift*0.32;
         confidenceEMA = confidenceEMA*0.7 + r.confidence*0.3;
         applyAuto(flowEMA, confidenceEMA);
