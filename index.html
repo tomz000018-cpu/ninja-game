@@ -1,7 +1,7 @@
 <!--
-31
-更新日時: 2026年9月3日 23:20
-忍者ゲーム 走行テスト31・大ジャンプ頂点停止修正
+32
+更新日時: 2026年9月3日 23:31
+忍者ゲーム 走行テスト32・前転起き上がりサイズ高さ微調整
 
 重要:
 ・Google Apps Script は使いません。
@@ -25,6 +25,7 @@
 ・22版の頭と腕から接地する専用1コマを維持します。
 ・30版では前転5コマのうち、起き上がり途中と立ち上がり／走り出し中間の2コマだけをさらに縮小しました。
 ・31版ではiPad上のmax-width上限で30版の縮小が実質効いていなかった点を修正。最後の2コマは走行フレームの頭部サイズを基準に比較し、transform scale(0.62)で約62%表示にして見た目の大きさを揃えました。
+・32版では起き上がり途中（ready）の1コマだけをscale(0.68)へ少し拡大し、前の回転コマと同じ接地高さを保つよう上下移動を修正しました。
 ・27版ではユーザー確認済みの5コマ構成に合わせ、接地〜前転〜走り出しを全面差し替えました。
 ・28版では27版で欠落していた大ジャンプ頂点・落下用の状態変数と時間/高さ定数を復旧し、頂点で停止するバグを修正しました。
 ・5コマは ①頭腕先行の着地 ②丸まり1 ③丸まり2 ④構える ⑤走り出し中間 です。
@@ -42,7 +43,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト31</title>
+<title>忍者走行テスト32</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -275,17 +276,21 @@ const ROLL_FRAMES = [
       // 29版：前転中は着地点のX座標から動かさない。
       // 回転そのものは5枚の専用画像で表現し、CSSではごく小さい上下動だけを行う。
       const p = rollProgress;
+      // 32版：起き上がり途中（ready）までは前の回転コマと同じ接地高さを維持。
+      // runStartに入ってからだけ、通常走行へ戻るための上下補間を行う。
       let yMove = 1.2;
-      if (p >= 0.70) {
-        const q = (p - 0.70) / 0.30;
+      if (p >= 0.78) {
+        const q = (p - 0.78) / 0.22;
         yMove = 1.2 * (1 - q);
       }
 
       extraTransform = ' translateY(' + yMove + 'vh)';
 
-      // 31版：起き上がり途中と走り出し中間は、走行16コマの頭部サイズと比較して約62%に縮小。
-      // max-widthの影響を受けないtransform scaleで確実に縮小する。
-      if (rollPhase === 'ready' || rollPhase === 'runStart') {
+      // 32版：ユーザー確認で小さすぎた起き上がり途中の1コマだけを少し拡大。
+      // 走り出し中間は31版の62%を維持する。
+      if (rollPhase === 'ready') {
+        extraTransform += ' scale(0.68)';
+      } else if (rollPhase === 'runStart') {
         extraTransform += ' scale(0.62)';
       }
     }
