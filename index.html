@@ -38,6 +38,7 @@
 -->
 <!doctype html>
 <html lang="ja">
+<!-- 33 / 2026-09-03 23:36 JST / 起き上がり途中コマ：サイズ74%、接地高さ補正 -->
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
@@ -276,20 +277,23 @@ const ROLL_FRAMES = [
       // 29版：前転中は着地点のX座標から動かさない。
       // 回転そのものは5枚の専用画像で表現し、CSSではごく小さい上下動だけを行う。
       const p = rollProgress;
-      // 32版：起き上がり途中（ready）までは前の回転コマと同じ接地高さを維持。
-      // runStartに入ってからだけ、通常走行へ戻るための上下補間を行う。
+      // 33版：前転素材は全コマとも足元の透明画像内Y座標が同じ。
+      // ただしreadyをscaleで縮小すると縮小中心が中央のため、見た目の足元が上へ浮く。
+      // その持ち上がり分を下方向へ補正し、直前の回転コマと接地高さを揃える。
       let yMove = 1.2;
-      if (p >= 0.78) {
+      if (rollPhase === 'ready') {
+        yMove = 3.8;
+      } else if (p >= 0.78) {
         const q = (p - 0.78) / 0.22;
-        yMove = 1.2 * (1 - q);
+        yMove = 3.8 * (1 - q);
       }
 
       extraTransform = ' translateY(' + yMove + 'vh)';
 
-      // 32版：ユーザー確認で小さすぎた起き上がり途中の1コマだけを少し拡大。
-      // 走り出し中間は31版の62%を維持する。
+      // 33版：readyは32版の68%から74%へ少し拡大。
+      // runStartは31版からの62%を維持する。
       if (rollPhase === 'ready') {
-        extraTransform += ' scale(0.68)';
+        extraTransform += ' scale(0.74)';
       } else if (rollPhase === 'runStart') {
         extraTransform += ' scale(0.62)';
       }
