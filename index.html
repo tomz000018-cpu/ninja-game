@@ -1,7 +1,7 @@
 <!--
-28
+29
 更新日時: 2026年9月3日 18:00
-忍者ゲーム 走行テスト28・大ジャンプ頂点停止修正
+忍者ゲーム 走行テスト29・大ジャンプ頂点停止修正
 
 重要:
 ・Google Apps Script は使いません。
@@ -30,6 +30,8 @@
 ・CSSで身体を回転させる処理は使わず、5枚の専用画像を順番に表示します。
 ・画面上部に障害物候補値と判定回数を表示します。
 ・手動確認用の「ジャンプテスト」ボタンも維持します。
+・29版では接地〜前転〜構え〜走り出し中間の5コマ表示サイズを走行時の85%に縮小。
+・29版では前転中の横方向移動を廃止し、着地点と同じX座標のまま回転・構えまで行います。
 -->
 <!doctype html>
 <html lang="ja">
@@ -249,7 +251,9 @@ const ROLL_FRAMES = [
   }
 
   function updateUI() {
-    ninja.style.width = size.value + 'vw';
+    // 29版：接地〜前転5コマだけ、走行時より一回り小さく表示する。
+    const displaySize = isRolling ? (Number(size.value) * 0.85) : Number(size.value);
+    ninja.style.width = displaySize + 'vw';
     ninja.style.top = heightPos.value + '%';
     // ジャンプ6コマ素材は走行16コマ素材と基準向きが逆なので、
     // ジャンプ中だけ反転条件を逆にして見た目の進行方向を揃える。
@@ -261,22 +265,16 @@ const ROLL_FRAMES = [
       // 走行素材とは基準向きが逆なので、表示反転条件も逆にする。
       visualFlip = !rollFacingFlipped;
 
-      // 回転そのものは画像の連続ポーズで表現し、
-      // CSSでは進行方向への移動と、ごく小さい上下動だけを行う。
-      const dir = rollFacingFlipped ? 1 : -1;
+      // 29版：前転中は着地点のX座標から動かさない。
+      // 回転そのものは5枚の専用画像で表現し、CSSではごく小さい上下動だけを行う。
       const p = rollProgress;
-      const eased = 1 - Math.pow(1 - p, 2);
-      const xMove = dir * eased * 12.5;
-
       let yMove = 1.2;
       if (p >= 0.70) {
         const q = (p - 0.70) / 0.30;
         yMove = 1.2 * (1 - q);
       }
 
-      extraTransform =
-        ' translateX(' + xMove + 'vw)' +
-        ' translateY(' + yMove + 'vh)';
+      extraTransform = ' translateY(' + yMove + 'vh)';
     }
 
     ninja.style.transform =
