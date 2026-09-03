@@ -1,7 +1,7 @@
 <!--
-27
-更新日時: 2026年9月3日 14:58
-忍者ゲーム 走行テスト27・接地前転5コマ
+28
+更新日時: 2026年9月3日 18:00
+忍者ゲーム 走行テスト28・大ジャンプ頂点停止修正
 
 重要:
 ・Google Apps Script は使いません。
@@ -24,6 +24,7 @@
 ・21版の着地即前転を維持します。
 ・22版の頭と腕から接地する専用1コマを維持します。
 ・27版ではユーザー確認済みの5コマ構成に合わせ、接地〜前転〜走り出しを全面差し替えました。
+・28版では27版で欠落していた大ジャンプ頂点・落下用の状態変数と時間/高さ定数を復旧し、頂点で停止するバグを修正しました。
 ・5コマは ①頭腕先行の着地 ②丸まり1 ③丸まり2 ④構える ⑤走り出し中間 です。
 ・各コマは既存JUMP_FRAMES/走行FRAMESの大きさ・位置・輪郭色/太さに合わせて統一しています。
 ・CSSで身体を回転させる処理は使わず、5枚の専用画像を順番に表示します。
@@ -223,6 +224,13 @@ const ROLL_FRAMES = [
   let rollFacingFlipped = false;
   let rollProgress = 0;
   let rollPhase = 'idle';
+  // 28版: 27版で欠落していた大ジャンプ頂点〜落下の状態・定数を復旧。
+  let isExtraApexFrame = false;
+  let isExtraFallFrame = false;
+  const BIG_EXTRA_APEX_MS = 135;
+  const BIG_EXTRA_APEX_Y = -31.5;
+  const BIG_EXTRA_FALL_MS = 125;
+  const BIG_EXTRA_FALL_Y = -17.0;
   const ROLL_DURATION_MS = 760;
   let activeJumpDurations = [95, 110, 105, 115, 135, 155];
   let activeJumpY = [0, 1.2, -4.0, -10.0, -13.5, 0];
@@ -322,7 +330,7 @@ const ROLL_FRAMES = [
       rollProgress = 0;
       rollPhase = 'idle';
       isExtraApexFrame = false;
-    isExtraFallFrame = false;
+      isExtraFallFrame = false;
       status.textContent = 'カメラ表示中。単独HTMLとして動作中。景色の横方向の流れを検出しています。';
       startCam.textContent = 'カメラ再開';
       requestAnimationFrame(analyzeLoop);
@@ -464,6 +472,7 @@ const ROLL_FRAMES = [
     activeJumpDurations = JUMP_PRESETS[jumpMode].durations;
     activeJumpY = JUMP_PRESETS[jumpMode].y;
     jumpYOffsetVh = activeJumpY[0];
+    isExtraApexFrame = false;
     isExtraFallFrame = false;
 
     lastJumpAt = now;
@@ -505,7 +514,7 @@ const ROLL_FRAMES = [
         const rollFacing = jumpFacingFlipped;
 
         isExtraApexFrame = false;
-      isExtraFallFrame = false;
+        isExtraFallFrame = false;
         isJumping = false;
         jumpFrameIndex = 0;
         jumpYOffsetVh = 0;
