@@ -1,7 +1,7 @@
 <!--
-30
-更新日時: 2026年9月3日 18:00
-忍者ゲーム 走行テスト30・大ジャンプ頂点停止修正
+31
+更新日時: 2026年9月3日 23:20
+忍者ゲーム 走行テスト31・大ジャンプ頂点停止修正
 
 重要:
 ・Google Apps Script は使いません。
@@ -24,6 +24,7 @@
 ・21版の着地即前転を維持します。
 ・22版の頭と腕から接地する専用1コマを維持します。
 ・30版では前転5コマのうち、起き上がり途中と立ち上がり／走り出し中間の2コマだけをさらに縮小しました。
+・31版ではiPad上のmax-width上限で30版の縮小が実質効いていなかった点を修正。最後の2コマは走行フレームの頭部サイズを基準に比較し、transform scale(0.62)で約62%表示にして見た目の大きさを揃えました。
 ・27版ではユーザー確認済みの5コマ構成に合わせ、接地〜前転〜走り出しを全面差し替えました。
 ・28版では27版で欠落していた大ジャンプ頂点・落下用の状態変数と時間/高さ定数を復旧し、頂点で停止するバグを修正しました。
 ・5コマは ①頭腕先行の着地 ②丸まり1 ③丸まり2 ④構える ⑤走り出し中間 です。
@@ -41,7 +42,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
-<title>忍者走行テスト27</title>
+<title>忍者走行テスト31</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:#fff;
@@ -252,12 +253,12 @@ const ROLL_FRAMES = [
   }
 
   function updateUI() {
-    // 30版：前転の前半3コマは29版のサイズを維持。
-    // 起き上がり途中（ready）と立ち上がり／走り出し中間（runStart）の2コマだけ、
-    // 走行忍者との見た目の大きさを合わせるため、さらに大きく縮小する。
+    // 31版：前転前半3コマは29版の85%表示を維持。
+    // 最後の2コマはwidth縮小ではなくtransform scaleを使う。
+    // iPadでは #ninja の max-width:250px に当たり、30版のwidth縮小が効かなかったため。
     let displaySize = Number(size.value);
-    if (isRolling) {
-      displaySize *= (rollPhase === 'ready' || rollPhase === 'runStart') ? 0.68 : 0.85;
+    if (isRolling && rollPhase !== 'ready' && rollPhase !== 'runStart') {
+      displaySize *= 0.85;
     }
     ninja.style.width = displaySize + 'vw';
     ninja.style.top = heightPos.value + '%';
@@ -281,6 +282,12 @@ const ROLL_FRAMES = [
       }
 
       extraTransform = ' translateY(' + yMove + 'vh)';
+
+      // 31版：起き上がり途中と走り出し中間は、走行16コマの頭部サイズと比較して約62%に縮小。
+      // max-widthの影響を受けないtransform scaleで確実に縮小する。
+      if (rollPhase === 'ready' || rollPhase === 'runStart') {
+        extraTransform += ' scale(0.62)';
+      }
     }
 
     ninja.style.transform =
