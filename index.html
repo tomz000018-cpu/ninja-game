@@ -38,6 +38,7 @@
 -->
 <!doctype html>
 <html lang="ja">
+<!-- 34 / 2026-09-03 / 起き上がり途中コマを80%へ拡大、足元位置は33版と同じ -->
 <!-- 33 / 2026-09-03 23:36 JST / 起き上がり途中コマ：サイズ74%、接地高さ補正 -->
 <head>
 <meta charset="utf-8">
@@ -282,7 +283,7 @@ const ROLL_FRAMES = [
       // その持ち上がり分を下方向へ補正し、直前の回転コマと接地高さを揃える。
       let yMove = 1.2;
       if (rollPhase === 'ready') {
-        yMove = 3.8;
+        yMove = 3.2;
       } else if (p >= 0.78) {
         const q = (p - 0.78) / 0.22;
         yMove = 3.8 * (1 - q);
@@ -290,10 +291,11 @@ const ROLL_FRAMES = [
 
       extraTransform = ' translateY(' + yMove + 'vh)';
 
-      // 33版：readyは32版の68%から74%へ少し拡大。
-      // runStartは31版からの62%を維持する。
+      // 34版：readyだけ74%から80%へ拡大。
+      // translateYも再補正し、足元の接地位置は33版と同じに維持する。
+      // runStartは62%を維持する。
       if (rollPhase === 'ready') {
-        extraTransform += ' scale(0.74)';
+        extraTransform += ' scale(0.80)';
       } else if (rollPhase === 'runStart') {
         extraTransform += ' scale(0.62)';
       }
